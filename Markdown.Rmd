@@ -1,0 +1,143 @@
+---
+title: "JHU Data Science Capstone"
+author: "Erin Kennedy"
+date: "October 29, 2019"
+output:
+  html_document:
+    df_print: paged
+  html_notebook: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "C:/Users/Erin Kennedy/Documents/Data Analytics Certificate/10 Capstone/Week 1/final/en_US")
+
+library(quanteda)
+library(ggplot2)
+
+##Setting a seed so that subsetting is reproducible in the future.
+set.seed(4444)
+```
+
+The motivation for this week's project is to: 
+1. Demonstrate that the data has been downloaded and successfully loaded.
+2. Create a basic report of summary statistics about the data sets.
+3. Report any interesting findings from the data exploration.
+4. Get feedback on my plans for creating a prediction algorithm and Shiny app.
+
+###Download and Read Data
+
+```{r Load_Data}
+blogs <- readLines("en_US.blogs.txt", encoding="UTF-8", skipNul=TRUE)
+news <- readLines("en_US.twitter.txt", encoding="UTF-8", skipNul=TRUE)
+tweets <- readLines("en_US.news.txt", encoding="UTF-8", skipNul=TRUE)
+swearWords <- readLines('swearwords.txt')
+```
+
+###Generate Summary Statistics
+I am generating the summary statistics to see the characteristics of each file to determine the amount of processing time and size needed on the computer for processing.
+
+```{r Text_Summary, echo=FALSE}
+text_summary <- data.frame('File' = c("Blogs", "News", "Tweets"), "File Size" = sapply(list(blogs, news, tweets), function(x){format(object.size(x), "MB")}), 'Entries' = sapply(list(blogs, news, tweets), function(x){length(x)}), 'Max Char' = sapply(list(blogs, news, tweets), function(x){max(unlist(lapply(x,function(y) nchar(y))))}))
+text_summary
+```
+To improve the run time for doing summary statistics we will limit each file to 10% of the data that is currently in it as a subset. I will also clean the data and convert it to a corpus. In linguistics, a corpus or text corpus is a large and structured set of texts. This is being done so that statistical analysis and hypothesis testing, checking occurrences or validating linguistic rules within a specific language can be performed.
+
+```{r Sample_Data}
+sampleBlogs <- sample(blogs, length(blogs)*.025)
+sampleNews <- sample(news, length(news)*.025)
+sampleTweets <- sample(tweets, length(tweets)*.025)
+
+text_corpus <- c(sampleBlogs, sampleNews, sampleTweets)
+text_corpus <- iconv(text_corpus, "UTF-8", "ASCII", sub="")
+```
+
+###Cleaning the Data
+Now that I have created the raw Corpus I will clean the data using the quanteda package.
+
+```{r Create_Corpus}
+corpus(text_corpus)
+raw_dfm <- dfm(text_corpus,
+               stem = FALSE,
+               verbose = FALSE,
+               remove = c(stopwords("english"),".", ",", "?", "!",":",")","(","-", '"', "/", " "))
+dfm_compress(raw_dfm)
+```
+
+###Exploratory Analysis
+Now that I have cleaned the document I am going to tokenize the data and look at frequencies of n-grams. I am going to use the quanteda package for this as well.
+
+```{r EDA}
+token_raw <- tokens_remove(tokens(text_corpus,
+                   what = "word",
+                   remove_numbers = TRUE,
+                   remove_punct = TRUE,
+                   remove_symbols = TRUE,
+                   remove_separators = TRUE, 
+                   remove_twitter = TRUE,
+                   remove_hyphens = TRUE,
+                   remove_url = TRUE), 
+              stopwords("english"))
+
+unigrams <- tokens_ngrams(token_raw, n = 1L, concatenator = "_")
+bigrams <- tokens_ngrams(token_raw, n = 2L, concatenator = "_")
+trigrams <- tokens_ngrams(token_raw, n = 3L, concatenator = "_")
+tetragrams <- tokens_ngrams(token_raw, n = 4L, concatenator = "_")
+```
+Now I will do a summary of the most common n-grams by calculating their frequencies.
+
+```{r Data_Summary}
+
+unigramFreq <- topfeatures(raw_dfm, n = 50)
+bigramFreq <- topfeatures(dfm(bigrams), n=50)
+trigramFreq <- topfeatures(dfm(trigrams), n=50)
+tetragramFreq <- topfeatures(dfm(tetragrams), n=50)
+
+unigramFreq.df <- data.frame(unigramFreq) 
+unigramFreq.df["unigram"] <- rownames(unigramFreq.df)    
+
+bigramFreq.df <- data.frame(bigramFreq) 
+bigramFreq.df["bigram"] <- rownames(bigramFreq.df)    
+
+trigramFreq.df <- data.frame(trigramFreq) 
+trigramFreq.df["trigram"] <- rownames(trigramFreq.df)    
+
+tetragramFreq.df <- data.frame(tetragramFreq) 
+tetragramFreq.df["tetragram"] <- rownames(tetragramFreq.df)    
+
+nGramPlot <- function(data, x, y, title) {
+ 
+  ggplot(data, aes(x=reorder(x, -y), y)) +
+                            geom_bar(position = "identity", 
+                                     stat = "identity",
+                                     fill = "blue",
+                                     color = "black")+
+                             theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+                             xlab("Feature") + 
+                             ylab("Count")
+}
+
+nGramPlot (unigramFreq.df,unigramFreq.df$unigram, unigramFreq.df$unigramFreq , "Most Frequent Unigrams")
+nGramPlot (bigramFreq.df,bigramFreq.df$bigram, bigramFreq.df$bigramFreq , "Most Frequent Bigrams")
+nGramPlot (trigramFreq.df,trigramFreq.df$trigram, trigramFreq.df$trigramFreq , "Most Frequent Trigrams")
+nGramPlot (tetragramFreq.df,tetragramFreq.df$tetragram, tetragramFreq.df$tetragramFreq , "Most Frequent Tetragrams")
+```
+
+Save off data for later use.
+
+```{r Save_Data}
+
+# Save Frequencies
+saveRDS(unigramFreq.df, "uniFreq.RDS")
+saveRDS(bigramFreq.df, "biFreq.RDS")
+saveRDS(trigramFreq.df, "triFreq.RDS")
+saveRDS(tetragramFreq.df, "tetraFreq.RDS")
+
+# Save N-Grams
+saveRDS(unigrams, "unigrams.RDS")
+saveRDS(bigrams, "bigrams.RDS")
+saveRDS(trigrams, "trigrams.RDS")
+saveRDS(tetragrams, "tetragrams.RDS")
+```
+
